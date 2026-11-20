@@ -4,11 +4,14 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from src.config.database import engine
 from src.services.traces import queue
+from src.services.storage import ensure_schema
 from src.routes import auth,datasets,plans,traces,audit
 from src.middlewares.errors import install_errors
 from src.middlewares.requests import RequestTrace
 @asynccontextmanager
 async def lifespan(app):
+ try:ensure_schema()
+ except Exception:logging.exception('schema upgrade failed; API remains available')
  if os.getenv('SEED_DEMO','true').lower()=='true':
   try:
    from scripts.seed_demo import seed

@@ -40,6 +40,11 @@ seed三账号、三个数据集（240行日班、空数据、重复右键）、�
 
 DSL最多6步，首步仅scan readings；filter eq/gte/lte；hash_join仅readings.sensor_id=sensors.sensor_id且最多一次；group仅value的count/sum/avg。禁止eval、任意代码和任意SQL。最多100传感器、2000采样、10000连接输出行；超限失败，不保存部分结果。JSON非法、字段错误、非法算子、孤立引用、重复名有可恢复错误。任务使用Redis简单单消费者，进程崩溃后的running任务不自动重试，保留供人工复查后新建任务。
 
+## 逐行存储迁移
+数据集页可为任一数据集发起「逐行存储」迁移：旧 JSON 采样分批复制到 `dataset_readings`，每批一个事务，行与 position 水位一起提交，中断后从上一批恢复；复制按 `(dataset_id, position)` 幂等，重试同一批不重复补行。行序与源一致，同值采样各占一行。迁移一开始，数据集编辑就同时写 JSON 与逐行表，回填期间的并发增删改不会被旧批次覆盖。
+
+页面上可发起回填、推进一批 / 回填到完成、重试上一批、看进度（cursor/source_total、批次、进度条）、「读源」逐行对照两边的行数与 SHA-256，然后切换或回退。切换前逐条核对全部行，任何缺失、多出或内容不一致都会阻止切换；切换持独占锁，新建执行在共享锁下只读当前一种存储，因此在途剖面沿用创建时的快照，新剖面读到同一版采样。回退时先把逐行表写回 JSON 再翻转模式，切换后的编辑既不丢失也不被旧快照覆盖。接口：`POST /datasets/{id}/backfill`、`POST .../backfill/run`、`POST .../backfill/retry`、`GET .../backfill`、`GET .../storage/source`、`POST .../storage/switch`、`POST .../storage/rollback`；回填/切换/回退仅 admin 与 operator，读进度和读源 viewer 可用。旧库启动时由 `ensure_schema()` 幂等补列。
+
 ## 技术、目录与本地开发
 Python3.11 / FastAPI / SQLAlchemy / psycopg / Redis / PostgreSQL16；原生 HTML/CSS/JS ES modules / nginx1.27。五服务frontend/backend/worker/db/redis均健康探针，命名卷数据库/Redis/共享产物。DB/Redis健康后启动backend，backend健康后启worker/frontend。
 
